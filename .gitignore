@@ -1,0 +1,19 @@
+# Written by install.php on the server. It holds the database password and
+# belongs to one installation — never to the repository.
+api/config.php
+
+# The SQLite file, used for local evaluation only. data/.htaccess is kept.
+data/*.sqlite
+data/*.sqlite-journal
+data/*.sqlite-wal
+
+# Release packages
+/propertybank-*.zip
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

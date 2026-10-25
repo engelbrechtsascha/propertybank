@@ -1,0 +1,30 @@
+# FINATUM PropertyBank — Apache / LiteSpeed configuration.
+# Plesk and cPanel both honour this file. If your site is served by plain
+# nginx, apply the equivalent rules in the nginx configuration instead
+# (see README.md, "Serving with nginx").
+
+Options -Indexes
+DirectoryIndex index.php index.html
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "same-origin"
+    # Scripts and styles are checked with the server on every load (a quick
+    # "not modified" when unchanged), so after an update no browser mixes
+    # old and new files. The fonts and icons may be cached as usual.
+    <FilesMatch "\.(js|mjs|css|html|webmanifest)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>
+
+# Never serve databases, dumps or documentation.
+<FilesMatch "\.(sqlite|sqlite3|db|sql|md|log)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

@@ -1,0 +1,20 @@
+# Normalise line endings: the server is Linux, the workstations are Windows.
+* text=auto
+
+*.php  text
+*.js   text
+*.css  text
+*.html text
+*.sql  text
+*.md   text
+*.json text
+*.csv  text
+
+# Windows scripts need Windows line endings wherever they are checked out.
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+
+
+*.png   binary
+*.woff2 binary
+*.zip   binary

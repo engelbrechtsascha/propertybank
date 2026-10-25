@@ -1,0 +1,12 @@
+# Only index.php may be requested inside api/. Configuration, the library and
+# the schema files stay unreachable from the web.
+
+<FilesMatch "^(?!index\.php$).*$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
