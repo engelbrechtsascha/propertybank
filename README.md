@@ -13,7 +13,7 @@ Built like the Pricer and MarketData — PHP and MySQL, no build step, no
 Composer, no Node.js on the server, nothing loaded from another domain. Upload
 the folder, open `install.php`, done.
 
-Version 0.2.5
+Version 0.3.0
 
 ---
 
@@ -63,7 +63,7 @@ create `propertybank`, a user with a strong password, and add the user to the
 database with **ALL PRIVILEGES**.
 
 **Step 2 — Upload.** cPanel → *File Manager* → `public_html`: upload
-`propertybank-0.2.5.zip`, *Extract*, delete the zip.
+`propertybank-0.3.0.zip`, *Extract*, delete the zip.
 
 **Step 3 — Install** at **https://www.finatum.de/propertybank/install.php**:
 MySQL, `localhost` / `3306`, the database, user and password from step 1 (with
@@ -78,6 +78,30 @@ refresh reads about 2,500 listings (a few minutes) and then locates them —
 about **half an hour to an hour**, because the geocoder allows one lookup a
 second. Keep the page open; if you close it, the refresh pauses and the page
 offers to continue. Later refreshes only locate new or changed listings.
+
+### Updating to 0.3.0
+
+**One row per flat.** The same flat is often advertised several times on OLX,
+as separate ads by different agents. Ads are taken as the same flat when they
+are in the same city, on the same floor of a building with the same number of
+floors, with the same floorspace (within 1 m²) and rooms, and either have the
+same located street and house number or word for word the same description of
+at least 150 characters; ads with different located addresses are never
+merged, and the price is not compared. The list shows each flat once — with
+the ad renewed most recently — and an "N ads" badge; the flat's dialog lists
+every ad with its price and link. *Show each ad separately* switches the
+grouping off. The groups are recalculated at the end of every refresh, so new
+ads of a flat already known join it.
+
+**New and updated.** A refresh marks ads seen for the first time **new**, and
+ads whose text or price changed, or that are back on OLX, **updated** (with
+the old price struck through). The labels of a refresh are shown once it has
+finished and stay until the next refresh finishes. *Only new and updated*
+shows just those flats.
+
+The database gains the columns it needs by itself. Upload
+`propertybank-0.3.0-update.zip` as below; the first page load groups the
+existing ads once. Labels appear from the next refresh on.
 
 ### Updating to 0.2.5
 

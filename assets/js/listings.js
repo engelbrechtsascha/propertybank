@@ -26,7 +26,33 @@ const QUALITY = {
 };
 
 const DEFAULT_FILTERS = { city: "", district: "", street: "", lm: {}, floorMin: "", floorMax: "", floorsMin: "", floorsMax: "",
-  areaMin: "", areaMax: "", priceMin: "", priceMax: "", priceCur: "USD", ppmMin: "", ppmMax: "", ppmCur: "USD", removed: false };
+  areaMin: "", areaMax: "", priceMin: "", priceMax: "", priceCur: "USD", ppmMin: "", ppmMax: "", ppmCur: "USD", removed: false,
+  changed: false, separate: false };
+
+/**
+ * One row per flat: the ads the server grouped as the same flat (same building,
+ * floor, floorspace — see listings_dedupe) become one entry, shown with its
+ * main ad (renewed most recently) and carrying all of them in _ads. With
+ * "Show each ad separately" every ad is its own row.
+ */
+function flats() {
+  const visible = store.listings.filter((l) => filters.removed || l.active);
+  if (filters.separate) return visible.map((l) => ({ ...l, _ads: [l], _flag: l.flag }));
+  const groups = new Map();
+  for (const l of visible) {
+    const g = groups.get(l.group);
+    if (g) g.push(l); else groups.set(l.group, [l]);
+  }
+  const out = [];
+  for (const ads of groups.values()) {
+    ads.sort((a, b) => String(b.site_refreshed || b.posted || "").localeCompare(String(a.site_refreshed || a.posted || "")) || a.id - b.id);
+    const main = ads.find((a) => a.id === a.group) || ads[0];
+    const flags = ads.map((a) => a.flag);
+    const flag = flags.every((f) => f === "new") ? "new" : flags.some((f) => f) ? "updated" : null;
+    out.push({ ...main, _ads: ads, _flag: flag });
+  }
+  return out;
+}
 
 /** Price per square metre in a currency, or null. */
 function ppm(l, cur) {
@@ -55,7 +81,9 @@ function columns() {
     { key: "city", label: "City", get: (l) => l.city, cell: (l) => l.city || "—" },
     { key: "district", label: "District", get: (l) => l.district, cell: (l) => l.district || "—" },
     { key: "address", label: "Address", get: (l) => l.address || null, cls: "addr",
-      cell: (l) => [el("span", { class: "a-en", text: l.address || "—" }), l.address_o ? el("span", { class: "sub", text: l.address_o }) : null,
+      cell: (l) => [l._flag ? el("span", { class: "flag flag-" + l._flag, text: l._flag }) : null,
+        el("span", { class: "a-en", text: l.address || "—" }), l.address_o ? el("span", { class: "sub", text: l.address_o }) : null,
+        l._ads && l._ads.length > 1 ? el("span", { class: "ads-badge", title: "The same flat in " + l._ads.length + " OLX ads — open it to see them all", text: l._ads.length + " ads" }) : null,
         el("span", { class: "q q-" + l.q, title: QUALITY[l.q][1], text: QUALITY[l.q][0] })] },
     { key: "floor", label: "Floor", num: true, get: (l) => l.floor, cell: (l) => l.floor === null ? "—" : l.floor + (l.floors !== null ? "/" + l.floors : "") },
     { key: "area", label: "m²", num: true, get: (l) => l.area, cell: (l) => fmtNum(l.area, l.area % 1 ? 1 : 0) },
@@ -94,7 +122,8 @@ function priceCell(l, cur) {
   const v = cur === "USD" ? l.usd : l.eur;
   if (v === null) return "—";
   const listed = l.pc === cur;
-  if (listed) return el("b", { class: "price-listed", title: "As listed" }, fmtMoney(v, cur));
+  if (listed) return [el("b", { class: "price-listed", title: "As listed" }, fmtMoney(v, cur)),
+    l.prev_pv !== null && l.prev_pv !== undefined && l.prev_pc === cur ? el("span", { class: "sub was", text: "was " + fmtMoney(l.prev_pv, cur) }) : null];
   const note = l.pc === "UAH" ? "Listed in hryvnia: " + fmtMoney(l.pv, "UAH") + "; converted at the last refresh's rate" : "Converted at the last refresh's rate";
   return el("span", { class: "price-conv", title: note }, "≈ " + fmtMoney(v, cur));
 }
@@ -122,6 +151,7 @@ function num(v) {
 
 function matches(l) {
   if (!filters.removed && !l.active) return false;
+  if (filters.changed && !l._flag) return false;
   if (filters.city && String(l.city_id) !== String(filters.city)) return false;
   if (filters.district && l.district !== filters.district) return false;
   if (filters.street) {
@@ -208,6 +238,10 @@ export async function renderListings(view) {
       c.addEventListener("change", () => { filters[key] = c.value; page = 0; save(); draw(); });
       return c;
     };
+    const changed = el("input", { type: "checkbox", checked: !!filters.changed });
+    changed.addEventListener("change", () => { filters.changed = changed.checked; page = 0; save(); draw(); });
+    const separate = el("input", { type: "checkbox", checked: !!filters.separate });
+    separate.addEventListener("change", () => { filters.separate = separate.checked; page = 0; save(); draw(); });
     const removed = el("input", { type: "checkbox", checked: !!filters.removed });
     removed.addEventListener("change", async () => {
       filters.removed = removed.checked; page = 0; save();
@@ -243,6 +277,8 @@ export async function renderListings(view) {
         group("Price", "", range("priceMin", "priceMax"), el("label", { class: "cur" }, el("span", { text: "Currency" }), curSel("priceCur", "Currency of the price limits"))),
         group("Price per m²", "", range("ppmMin", "ppmMax"), el("label", { class: "cur" }, el("span", { text: "Currency" }), curSel("ppmCur", "Currency of the price per m² limits")))),
       el("div", { class: "row-actions" },
+        el("label", { class: "check" }, changed, el("span", { text: "Only new and updated (last refresh)" })),
+        el("label", { class: "check" }, separate, el("span", { text: "Show each ad separately" })),
         el("label", { class: "check" }, removed, el("span", { text: "Include listings no longer on OLX" })),
         el("span", { class: "spacer" }),
         el("button", { type: "button", class: "btn small", onclick: () => { filters = { ...DEFAULT_FILTERS }; page = 0; save(); drawFilters(); draw(); } }, icon("reset"), "Clear filters")));
@@ -250,7 +286,8 @@ export async function renderListings(view) {
 
   function draw() {
     const cols = columns();
-    const all = store.listings.filter(matches);
+    const everything = flats();
+    const all = everything.filter(matches);
     const list = sorted(all, cols);
     const pages = Math.max(1, Math.ceil(list.length / PAGE));
     page = Math.min(page, pages - 1);
@@ -278,7 +315,8 @@ export async function renderListings(view) {
 
     put(results,
       el("div", { class: "toolbar" },
-        el("span", { class: "count" }, el("b", { text: fmtNum(list.length) }), " of " + plural(store.listings.filter((l) => filters.removed || l.active).length, "listing")),
+        el("span", { class: "count" }, el("b", { text: fmtNum(list.length) }), " of " + plural(everything.length, filters.separate ? "ad" : "flat")
+          + (filters.separate ? "" : " (" + fmtNum(everything.reduce((n, f) => n + f._ads.length, 0)) + " ads)")),
         distLimited ? el("span", { class: "faint", text: "Listings without a location are left out while a distance limit is set." }) : null,
         el("span", { class: "grow" }), pages > 1 ? pager(false) : null),
       el("div", { class: "table-wrap listings-wrap" }, el("table", { class: "grid listings" }, el("thead", {}, head), el("tbody", {}, body))),
@@ -313,7 +351,23 @@ function detail(l) {
   const lmTiles = (city ? city.landmarks : []).slice(0, 4).map((lm) => tile(lm.name, fmtM(l.geo && l.geo.lm ? l.geo.lm[lm.key] : null)));
   const stTiles = [0, 1].map((i) => { const s = l.geo && l.geo.st[i]; return tile("Metro " + (i + 1), s ? fmtM(s.m) : "—", s ? s.n + (s.l ? " (" + s.l + ")" : "") : null, s ? s.c || "#64748B" : null); });
   const price = l.pv === null ? "—" : fmtMoney(l.pv, l.pc) + " as listed" +
-    (l.pc !== "USD" && l.usd !== null ? " · ≈ " + fmtMoney(l.usd, "USD") : "") + (l.pc !== "EUR" && l.eur !== null ? " · ≈ " + fmtMoney(l.eur, "EUR") : "");
+    (l.pc !== "USD" && l.usd !== null ? " · ≈ " + fmtMoney(l.usd, "USD") : "") + (l.pc !== "EUR" && l.eur !== null ? " · ≈ " + fmtMoney(l.eur, "EUR") : "") +
+    (l.prev_pv !== null && l.prev_pv !== undefined ? " · was " + fmtMoney(l.prev_pv, l.prev_pc) + " before the last refresh" : "");
+
+  // The same flat in several ads: all of them, with their prices and links.
+  const ads = l._ads && l._ads.length > 1 ? el("div", { class: "ads" },
+    el("h3", {}, "Advertised " + l._ads.length + " times on OLX",
+      el("span", { class: "faint", text: "the same building, floor and floorspace — different sellers often ask different prices" })),
+    el("table", { class: "grid tight ads-table" },
+      el("thead", {}, el("tr", {}, el("th", { text: "" }), el("th", { text: "Title" }), el("th", { class: "num", text: "Price" }),
+        el("th", { class: "num", text: "m²" }), el("th", { text: "Posted" }), el("th", { text: "" }))),
+      el("tbody", {}, l._ads.map((a) => el("tr", { class: a.id === l.id ? "this-ad" : null },
+        el("td", {}, a.flag ? el("span", { class: "flag flag-" + a.flag, text: a.flag }) : null),
+        el("td", { class: "ad-title", text: a.title_en || a.title }),
+        el("td", { class: "num" }, a.pv === null ? "—" : fmtMoney(a.pv, a.pc)),
+        el("td", { class: "num", text: fmtNum(a.area, a.area % 1 ? 1 : 0) }),
+        el("td", { text: fmtDate(a.site_refreshed || a.posted) }),
+        el("td", {}, el("a", { href: a.url, class: "olx-link", onclick: (ev) => { ev.preventDefault(); openListing(a.url); } }, icon("link"), "OLX"))))))) : null;
 
   const descr = el("div", { class: "descr" }, el("h3", {}, "Description"), el("div", { class: "loading", text: "Loading the description…" }));
   m.body.append(el("div", { class: "detail" },
@@ -334,7 +388,7 @@ function detail(l) {
       el("div", { class: "dists" }, lmTiles),
       el("div", { class: "dists" }, stTiles),
       el("p", { class: "faint small", text: "North up. Distances in metres as the crow flies." })),
-    descr));
+    ads, descr));
   loadDescription(l, descr);
   m.foot.append(
     el("span", { class: "spacer" }),

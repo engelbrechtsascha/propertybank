@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS listings (
   translated_from  TEXT,
   translated_at    TEXT,
   translated_by    TEXT,
+  group_id         INTEGER,
+  change_flag      TEXT,
+  change_run       INTEGER,
+  prev_price_value REAL,
+  prev_price_currency TEXT,
   UNIQUE (source, source_id)
 );
 

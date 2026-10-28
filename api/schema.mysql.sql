@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS listings (
   translated_from  VARCHAR(8)   NULL,
   translated_at    DATETIME     NULL,
   translated_by    VARCHAR(40)  NULL,          -- DeepL, Google Translate, or what an imported file names
+  group_id         INT UNSIGNED NULL,          -- the main ad of the flat this ad is for (several ads, one flat)
+  change_flag      VARCHAR(8)   NULL,          -- new | updated, set by the refresh change_run
+  change_run       INT UNSIGNED NULL,
+  prev_price_value DECIMAL(14,2) NULL,         -- the price before the last change
+  prev_price_currency CHAR(3)   NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_listings_source (source, source_id),
   KEY ix_listings_enrich (needs_enrich),

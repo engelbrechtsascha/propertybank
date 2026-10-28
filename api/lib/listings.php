@@ -28,7 +28,7 @@ function ensure_listing_columns(): void
     }
     $done = true;
     try {
-        q('SELECT translated_by FROM listings LIMIT 1');
+        q('SELECT prev_price_currency FROM listings LIMIT 1');
         return;
     } catch (Throwable) {
         // not there yet: add whichever columns are missing
@@ -40,6 +40,12 @@ function ensure_listing_columns(): void
         'translated_from' => $sqlite ? 'TEXT' : 'VARCHAR(8) NULL',
         'translated_at' => $sqlite ? 'TEXT' : 'DATETIME NULL',
         'translated_by' => $sqlite ? 'TEXT' : 'VARCHAR(40) NULL',
+        // 0.3.0: the same flat in several ads, and what the last refresh changed
+        'group_id' => $sqlite ? 'INTEGER' : 'INT UNSIGNED NULL',
+        'change_flag' => $sqlite ? 'TEXT' : 'VARCHAR(8) NULL',
+        'change_run' => $sqlite ? 'INTEGER' : 'INT UNSIGNED NULL',
+        'prev_price_value' => $sqlite ? 'REAL' : 'DECIMAL(14,2) NULL',
+        'prev_price_currency' => $sqlite ? 'TEXT' : 'CHAR(3) NULL',
     ] as $col => $type) {
         try {
             q('SELECT ' . $col . ' FROM listings LIMIT 1');
@@ -53,8 +59,16 @@ function ensure_listing_columns(): void
     }
 }
 
-/** @return 'new'|'changed'|'same' */
-function listing_upsert(array $p, int $searchId, array $raw): string
+/**
+ * Stores one listing from a search page. $runId marks what this refresh
+ * found: a new ad is flagged "new", an ad whose text or price changed — or
+ * that is back on OLX after being removed — "updated" (with the old price,
+ * when that changed). The flags of a refresh are shown once it has finished,
+ * until the next one finishes.
+ *
+ * @return 'new'|'changed'|'same'
+ */
+function listing_upsert(array $p, int $searchId, array $raw, int $runId = 0): string
 {
     ensure_listing_columns();
     if ($p['source_id'] === '' || $p['url'] === '') {
@@ -63,7 +77,8 @@ function listing_upsert(array $p, int $searchId, array $raw): string
     $now = now_sql();
     $fx = fx_latest();
     $conv = fx_convert($p['price_value'], $p['price_currency'], $fx);
-    $existing = one('SELECT id, content_hash, raw FROM listings WHERE source = ? AND source_id = ?', [$p['source'], $p['source_id']]);
+    $existing = one('SELECT id, content_hash, raw, price_value, price_currency, active FROM listings WHERE source = ? AND source_id = ?',
+        [$p['source'], $p['source_id']]);
     $city = $p['olx_city_id'] ? city_by_olx_id($p['olx_city_id']) : null;
 
     $cols = [
@@ -81,7 +96,7 @@ function listing_upsert(array $p, int $searchId, array $raw): string
 
     if (!$existing) {
         $cols += ['source' => $p['source'], 'source_id' => $p['source_id'], 'first_seen_at' => $now,
-            'content_hash' => $p['content_hash'], 'needs_enrich' => 1];
+            'content_hash' => $p['content_hash'], 'needs_enrich' => 1, 'change_flag' => 'new', 'change_run' => $runId];
         q('INSERT INTO listings (' . implode(', ', array_keys($cols)) . ') VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ')',
             array_values($cols));
         return 'new';
@@ -103,9 +118,21 @@ function listing_upsert(array $p, int $searchId, array $raw): string
         $cols['description_en'] = null;
         $cols['translated_at'] = null;
     }
+    $oldPrice = $existing['price_value'] !== null ? (float) $existing['price_value'] : null;
+    $priceChanged = $oldPrice !== null && $p['price_value'] !== null
+        && (abs($oldPrice - (float) $p['price_value']) >= 0.5 || (string) $existing['price_currency'] !== $p['price_currency']);
+    if ($priceChanged) {
+        $cols['prev_price_value'] = $oldPrice;
+        $cols['prev_price_currency'] = (string) $existing['price_currency'];
+    }
+    $back = (int) $existing['active'] !== 1;
+    if ($changed || $priceChanged || $back) {
+        $cols['change_flag'] = 'updated';
+        $cols['change_run'] = $runId;
+    }
     $set = implode(', ', array_map(static fn ($c) => $c . ' = ?', array_keys($cols)));
     q('UPDATE listings SET ' . $set . ' WHERE id = ?', [...array_values($cols), $existing['id']]);
-    return $changed ? 'changed' : 'same';
+    return $changed || $priceChanged || $back ? 'changed' : 'same';
 }
 
 /** A district name reduced to its stem, for comparing "Шевченківський" with "Шевченківський район" or "Шевченковский". */
@@ -269,20 +296,157 @@ function geo_recompute(int $cityId): int
     return $n;
 }
 
+/* ----------------------------------------------- the same flat, several ads ---
+ *
+ * Agencies and owners advertise the same flat several times, as separate OLX
+ * ads with their own numbers. Two ads are taken to be the same flat when they
+ * are in the same city, on the same floor of a building with the same number
+ * of floors, with the same floorspace (within FLOORSPACE_TOLERANCE m²) and the
+ * same number of rooms (when both say), and either
+ *   - have the same located address (street and house number), or
+ *   - have word for word the same title and description, of at least
+ *     MIN_TEXT_FOR_MATCH characters (a short, generic text such as "Flat
+ *     for sale, 4 rooms" says nothing about which flat it is).
+ * Two ads whose located addresses differ are never the same flat.
+ * The price is not compared: different agents ask different prices.
+ *
+ * Each ad keeps its row; group_id points to the group's main ad — the one
+ * renewed on OLX most recently — and the list shows one row per group.
+ * Recomputed at the end of every refresh, so new duplicates fold in.
+ */
+
+const FLOORSPACE_TOLERANCE = 1.0;
+const MIN_TEXT_FOR_MATCH = 150;
+
+function house_key(string $street, string $house): string
+{
+    $h = mb_strtolower(preg_replace('/[\s\-–\/\\.]+/u', '', $house) ?? $house);
+    $s = mb_strtolower(preg_replace('/[^\p{L}\p{N}]+/u', '', $street) ?? $street);
+    return $s . '|' . $h;
+}
+
+/** Recomputes the groups. Returns [groups with more than one ad, ads in them]. */
+function listings_dedupe(): array
+{
+    ensure_listing_columns();
+    $rows = all('SELECT id, city_id, street_en, house_no, loc_quality, floor, floors_total, area_m2, rooms, content_hash,
+                        site_refreshed_at, posted_at, raw FROM listings WHERE active = 1');
+    $parent = [];
+    $find = static function (int $x) use (&$parent, &$find): int {
+        while ($parent[$x] !== $x) {
+            $parent[$x] = $parent[$parent[$x]];
+            $x = $parent[$x];
+        }
+        return $x;
+    };
+    $byId = [];
+    foreach ($rows as $r) {
+        $raw = json_decode(unpack_text($r['raw'] ?? ''), true) ?: [];
+        $r['text_len'] = mb_strlen(plain_text((string) ($raw['description'] ?? '')));
+        $r['house'] = in_array($r['loc_quality'], ['exact', 'text'], true) && trim((string) $r['house_no']) !== ''
+            ? house_key((string) $r['street_en'], (string) $r['house_no']) : null;
+        unset($r['raw']);
+        $parent[(int) $r['id']] = (int) $r['id'];
+        $byId[(int) $r['id']] = $r;
+    }
+    // Candidates share city, floor and floors; within those, an address or the same text.
+    $buckets = [];
+    foreach ($rows as $r) {
+        if ($r['floor'] === null || $r['area_m2'] === null) {
+            continue;
+        }
+        $base = ($r['city_id'] ?? '') . '|' . $r['floor'] . '|' . ($r['floors_total'] ?? '');
+        $r = $byId[(int) $r['id']];
+        if ($r['house'] !== null) {
+            $buckets['a|' . $base . '|' . $r['house']][] = (int) $r['id'];
+        }
+        if ((string) $r['content_hash'] !== '' && $r['text_len'] >= MIN_TEXT_FOR_MATCH) {
+            $buckets['t|' . $base . '|' . $r['content_hash']][] = (int) $r['id'];
+        }
+    }
+    foreach ($buckets as $ids) {
+        $n = count($ids);
+        for ($i = 0; $i < $n; $i++) {
+            for ($j = $i + 1; $j < $n; $j++) {
+                $a = $byId[$ids[$i]];
+                $b = $byId[$ids[$j]];
+                if (abs((float) $a['area_m2'] - (float) $b['area_m2']) > FLOORSPACE_TOLERANCE) {
+                    continue;
+                }
+                if ($a['rooms'] !== null && $b['rooms'] !== null && (int) $a['rooms'] !== (int) $b['rooms']) {
+                    continue;
+                }
+                if ($a['house'] !== null && $b['house'] !== null && $a['house'] !== $b['house']) {
+                    continue;
+                }
+                $parent[$find($ids[$i])] = $find($ids[$j]);
+            }
+        }
+    }
+    // The main ad of each group: renewed most recently on OLX; then the oldest row.
+    $groups = [];
+    foreach ($byId as $id => $r) {
+        $groups[$find($id)][] = $id;
+    }
+    $multi = 0;
+    $members = 0;
+    $assign = [];
+    foreach ($groups as $ids) {
+        usort($ids, static function ($x, $y) use ($byId) {
+            $tx = (string) ($byId[$x]['site_refreshed_at'] ?? $byId[$x]['posted_at'] ?? '');
+            $ty = (string) ($byId[$y]['site_refreshed_at'] ?? $byId[$y]['posted_at'] ?? '');
+            return $ty <=> $tx ?: $x <=> $y;
+        });
+        if (count($ids) > 1) {
+            $multi++;
+            $members += count($ids);
+        }
+        foreach ($ids as $id) {
+            $assign[$ids[0]][] = $id;
+        }
+    }
+    db()->beginTransaction();
+    try {
+        q('UPDATE listings SET group_id = NULL WHERE active = 0');
+        foreach ($assign as $main => $ids) {
+            foreach (array_chunk($ids, 500) as $chunk) {
+                q('UPDATE listings SET group_id = ? WHERE id IN (' . implode(',', array_map('intval', $chunk)) . ')', [$main]);
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollBack();
+        throw $e;
+    }
+    return [$multi, $members];
+}
+
 /** Every listing as the browser shows it. */
 function listings_for_browser(bool $withInactive): array
 {
     ensure_listing_columns();
+    // An installation updated from before 0.3.0: group once, now.
+    if (one('SELECT id FROM listings WHERE active = 1 AND group_id IS NULL LIMIT 1')) {
+        listings_dedupe();
+    }
+    // Labels belong to the last refresh that finished.
+    $last = one("SELECT id FROM refresh_runs WHERE status = 'done' ORDER BY id DESC LIMIT 1");
+    $lastRun = $last ? (int) $last['id'] : -1;
     $rows = all('SELECT id, source, source_id, url, title, city_id, city_en, city_orig, district_en, district_orig,
                         street_en, street_orig, house_no, address_en, address_orig, loc_quality, lat, lon, geo,
                         floor, floors_total, area_m2, rooms, ceiling_m, year_built, price_value, price_currency,
-                        price_usd, price_eur, posted_at, site_refreshed_at, first_seen_at, last_seen_at, active, needs_enrich, title_en
+                        price_usd, price_eur, posted_at, site_refreshed_at, first_seen_at, last_seen_at, active, needs_enrich, title_en,
+                        group_id, change_flag, change_run, prev_price_value, prev_price_currency
                    FROM listings' . ($withInactive ? '' : ' WHERE active = 1') . ' ORDER BY posted_at DESC');
     $num = static fn ($v) => $v === null ? null : (float) $v;
     $int = static fn ($v) => $v === null ? null : (int) $v;
     return array_map(static fn (array $r): array => [
         'id' => (int) $r['id'], 'src' => $r['source'], 'sid' => $r['source_id'], 'url' => $r['url'], 'title' => tidy_text($r['title']),
         'title_en' => $r['title_en'] !== null ? tidy_text($r['title_en']) : null,
+        'group' => $r['group_id'] !== null ? (int) $r['group_id'] : (int) $r['id'],
+        'flag' => $r['change_flag'] !== null && (int) $r['change_run'] === $lastRun ? $r['change_flag'] : null,
+        'prev_pv' => $r['prev_price_value'] !== null && (int) $r['change_run'] === $lastRun ? (float) $r['prev_price_value'] : null,
+        'prev_pc' => $r['prev_price_currency'],
         'city_id' => $int($r['city_id']), 'city' => $r['city_en'], 'city_o' => $r['city_orig'],
         'district' => $r['district_en'], 'district_o' => $r['district_orig'],
         'street' => $r['street_en'], 'street_o' => $r['street_orig'], 'house' => $r['house_no'],

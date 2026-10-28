@@ -160,6 +160,9 @@ function run_step(array $run): array
 
                 case 'finish':
                     fx_apply_all();
+                    [$dupGroups, $dupAds] = listings_dedupe();
+                    $run['stats']['dup_groups'] = $dupGroups;
+                    $run['stats']['dup_ads'] = $dupAds;
                     foreach ($st['searches'] as $s) {
                         if ($s['complete']) {
                             q('UPDATE searches SET last_run_at = ?, last_count = ? WHERE id = ?', [now_sql(), $s['seen'], $s['id']]);
@@ -168,8 +171,8 @@ function run_step(array $run): array
                     $run['status'] = 'done';
                     $run['finished_at'] = now_sql();
                     $s = $run['stats'];
-                    $run['message'] = sprintf('%d new, %d changed, %d removed; %d located, %d without a usable address; %d translated.',
-                        $s['new'], $s['changed'], $s['removed'], $s['located'], $s['not_located'], $s['translated'] ?? 0)
+                    $run['message'] = sprintf('%d new, %d updated, %d removed; %d located, %d without a usable address; %d translated; %d flats advertised more than once (%d ads).',
+                        $s['new'], $s['changed'], $s['removed'], $s['located'], $s['not_located'], $s['translated'] ?? 0, $dupGroups, $dupAds)
                         . ($st['notes'] ? ' ' . implode(' ', array_unique($st['notes'])) : '');
                     break;
             }
@@ -274,7 +277,7 @@ function run_list_page(array &$run): bool
         $page = $limit > 0 ? olx_search_page($s['params'], $s['offset'], $limit, $band['from'], $band['to']) : ['offers' => [], 'total' => 0];
         foreach ($page['offers'] as $o) {
             $p = olx_parse_offer($o);
-            $result = listing_upsert($p, (int) $s['id'], $o);
+            $result = listing_upsert($p, (int) $s['id'], $o, (int) $run['id']);
             $run['stats'][$result]++;
             $s['seen']++;
         }

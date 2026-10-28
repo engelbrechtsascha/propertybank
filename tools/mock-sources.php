@@ -47,7 +47,9 @@ function offers(): array
     }
     mt_srand(20261023);
     $all = [];
-    for ($i = 0; $i < 1240; $i++) {
+    // A second round (tools/mock-round2 exists): some prices changed, 15 new ads.
+    $round2 = is_file(__DIR__ . '/mock-round2');
+    for ($i = 0; $i < ($round2 ? 1255 : 1240); $i++) {
         $id = 900000000 + $i * 7;
         $s = STREETS[$i % count(STREETS)];
         $house = (string) (1 + ($i * 13) % 90);
@@ -56,6 +58,9 @@ function offers(): array
         $floors = 5 + $i % 20;
         $floor = 1 + ($i * 7) % $floors;
         $usd = (int) round((40000 + $area * (1400 + ($i * 31) % 1600)) / 500) * 500;
+        if ($round2 && $i % 97 === 0) {
+            $usd -= 5000;
+        }
         $cur = $i % 17 === 0 ? 'UAH' : ($i % 23 === 0 ? 'EUR' : 'USD');
         $value = $cur === 'UAH' ? $usd * 41 : ($cur === 'EUR' ? (int) round($usd / 1.08 / 500) * 500 : $usd);
         $mode = $i % 5;
@@ -100,6 +105,26 @@ function offers(): array
             '_usd' => $usd, '_street' => $s, '_house' => $house, '_exact' => $mode === 2,
         ];
     }
+    // The same flat advertised again by other sellers: every 40th flat twice more, other ad numbers and prices.
+    $copies = [];
+    foreach ($all as $k => $o) {
+        if ($k % 40 === 0) {
+            foreach ([1, 2] as $c) {
+                $d = $o;
+                $d['id'] = $o['id'] + 500000000 + $c;
+                $d['url'] = 'https://www.olx.ua/d/uk/obyavlenie/test-' . $d['id'] . '.html';
+                $d['_usd'] = $o['_usd'] + $c * 3000;
+                foreach ($d['params'] as &$prm) {
+                    if ($prm['key'] === 'price') {
+                        $prm['value']['value'] = $prm['value']['currency'] === 'USD' ? $d['_usd'] : $prm['value']['value'];
+                    }
+                }
+                unset($prm);
+                $copies[] = $d;
+            }
+        }
+    }
+    $all = array_merge($all, $copies);
     return $all;
 }
 

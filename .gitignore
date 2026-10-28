@@ -17,3 +17,6 @@ data/*.sqlite-wal
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Test switch for tools/mock-sources.php
+tools/mock-round2

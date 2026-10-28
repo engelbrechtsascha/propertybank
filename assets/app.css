@@ -717,6 +717,20 @@ table.grid.listings tbody tr.selected td:first-child{box-shadow:inset 4px 0 0 va
 .dist b{display:block;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;margin-top:2px}
 .dist-s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+/* New / updated labels, and flats in several ads. */
+.flag{display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  padding:1px 6px;border-radius:4px;margin:0 6px 2px 0;vertical-align:1px;color:#fff}
+.flag-new{background:var(--s-done)}
+.flag-updated{background:var(--s-active)}
+.ads-badge{display:inline-block;margin:3px 0 0 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding:1px 6px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line-strong);color:var(--muted);cursor:help}
+table.grid td .sub.was{color:var(--faint);text-decoration:line-through;font-weight:400}
+.ads{grid-column:1 / -1;border-top:1px solid var(--line);padding-top:14px}
+.ads h3{font-size:14px;margin:0 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ads h3 .faint{font-weight:400;font-size:12px}
+table.grid.ads-table td.ad-title{white-space:normal;max-width:420px}
+table.grid.ads-table tr.this-ad td{background:color-mix(in oklab, var(--accent) 8%, var(--surface))}
+
 /* The description in the detail dialog. */
 .descr{grid-column:1 / -1;border-top:1px solid var(--line);padding-top:14px}
 .descr h3{font-size:14px;margin:0 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
