@@ -79,6 +79,14 @@ about **half an hour to an hour**, because the geocoder allows one lookup a
 second. Keep the page open; if you close it, the refresh pauses and the page
 offers to continue. Later refreshes only locate new or changed listings.
 
+### Updating to 0.3.2
+
+**Dashboard.** Each tile has its title on top, then the average — unweighted,
+every flat counts once — and the range (min – max) in small print below.
+**Wider list.** The listings page uses the width of the screen (up to 2,200
+pixels), so on a full-HD screen every column fits without scrolling sideways.
+No database changes: upload `propertybank-0.3.2-update.zip` as below.
+
 ### Updating to 0.3.1
 
 **Dashboard.** Under the filters, tiles show what the filters let through:

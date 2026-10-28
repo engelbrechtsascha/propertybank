@@ -733,11 +733,13 @@ table.grid.ads-table tr.this-ad td{background:color-mix(in oklab, var(--accent) 
 
 /* Dashboard under the filters (the PilotLog's tiles). */
 .dash{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
-@media (min-width:1720px){.dash{grid-template-columns:repeat(8,minmax(0,1fr))}}
+@media (min-width:1400px){.dash{grid-template-columns:minmax(0,1.3fr) repeat(7,minmax(0,1fr))}}
 @media (max-width:640px){.dash{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .dtile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-1);min-width:0}
-.dtile b{display:block;font-size:clamp(15px,1.25vw,19px);font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.25}
-.dtile span{display:block;font-size:12.5px;color:var(--muted);margin-top:4px}
+.dtile{display:flex;flex-direction:column;gap:2px}
+.dtile .dt-title{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+.dtile b{font-size:clamp(20px,1.6vw,26px);font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap}
+.dtile small{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .dtile.lead b{color:var(--accent-text)}
 
 /* Marked as of interest. */
@@ -756,3 +758,7 @@ table.grid.listings td.c-mark{width:28px;padding-right:0}
 .descr details{margin-top:10px}
 .descr details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .descr details .descr-text{color:var(--muted);margin-top:8px}
+
+/* The listings use the width of the screen, so every column fits where it can. */
+main:has(.listings-wrap){max-width:2200px;padding-left:24px;padding-right:24px}
+body:has(.listings-wrap) .topbar-inner{max-width:2200px;padding-left:24px;padding-right:24px}

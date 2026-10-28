@@ -7,4 +7,4 @@ declare(strict_types=1);
  * MarketData.
  */
 
-const PB_VERSION = '0.3.1';
+const PB_VERSION = '0.3.2';

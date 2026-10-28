@@ -388,30 +388,37 @@ function select(id, row) {
 
 /** Ranges of what the filters let through: one tile each, as in PilotLog. */
 function dashboard(list, everything) {
-  const range = (vals) => {
-    const v = vals.filter((x) => x !== null && x !== undefined && Number.isFinite(x));
-    return v.length ? [Math.min(...v), Math.max(...v)] : null;
-  };
+  const nums = (vals) => vals.filter((x) => x !== null && x !== undefined && Number.isFinite(x));
   const money = (x, cur) => {
     const sym = cur === "EUR" ? "€" : "$";
     if (x >= 1e6) return sym + (Math.round(x / 1e4) / 100).toLocaleString("en-GB") + "m";
     if (x >= 1e4) return sym + (Math.round(x / 100) / 10).toLocaleString("en-GB") + "k";
     return sym + fmtNum(x, 0);
   };
-  const show = (r, f) => (r ? (r[0] === r[1] ? f(r[0]) : f(r[0]) + " – " + f(r[1])) : "—");
-  const tile = (value, label, cls) => el("div", { class: "dtile" + (cls ? " " + cls : "") }, el("b", { text: value }), el("span", { text: label }));
+  // Unweighted: every flat counts once.
+  const stat = (title, vals, f) => {
+    const v = nums(vals);
+    const avg = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+    const lo = v.length ? Math.min(...v) : null, hi = v.length ? Math.max(...v) : null;
+    return el("div", { class: "dtile" }, el("span", { class: "dt-title", text: title }),
+      el("b", { text: avg === null ? "—" : f(avg) }),
+      el("small", { text: v.length ? "(" + (lo === hi ? f(lo) : f(lo) + " – " + f(hi)) + ")" : "" }));
+  };
   const ads = list.reduce((n, f) => n + (f._ads ? f._ads.length : 1), 0);
   const allAds = everything.reduce((n, f) => n + (f._ads ? f._ads.length : 1), 0);
   const city = filters.city ? store.city(Number(filters.city)) : null;
   const lms = (city ? city.landmarks : landmarkColumns()).slice(0, 2);
+  const m = (x) => fmtNum(x, 0) + " m";
   return el("div", { class: "dash" },
-    tile(fmtNum(list.length) + " / " + fmtNum(everything.length), (filters.separate ? "ads" : "flats") + " shown" + (filters.separate ? "" : " · " + fmtNum(ads) + " of " + fmtNum(allAds) + " ads"), "lead"),
-    tile(show(range(list.map((l) => l.area)), (x) => fmtNum(x, 0)), "m²"),
-    tile(show(range(list.map((l) => l.usd)), (x) => money(x, "USD")), "price USD"),
-    tile(show(range(list.map((l) => l.eur)), (x) => money(x, "EUR")), "price EUR"),
-    tile(show(range(list.map((l) => ppm(l, "USD"))), (x) => "$" + fmtNum(x, 0)), "USD / m²"),
-    tile(show(range(list.map((l) => ppm(l, "EUR"))), (x) => "€" + fmtNum(x, 0)), "EUR / m²"),
-    lms.map((lm) => tile(show(range(list.map((l) => (l.geo && l.geo.lm ? l.geo.lm[lm.key] : null))), (x) => fmtNum(x, 0)) + " m", "to " + lm.name)));
+    el("div", { class: "dtile lead" }, el("span", { class: "dt-title", text: filters.separate ? "Ads shown" : "Flats shown" }),
+      el("b", { text: fmtNum(list.length) + " / " + fmtNum(everything.length) }),
+      el("small", { text: filters.separate ? "" : "(" + fmtNum(ads) + " of " + fmtNum(allAds) + " ads)" })),
+    stat("Avg size m²", list.map((l) => l.area), (x) => fmtNum(x, 0)),
+    stat("Avg price USD", list.map((l) => l.usd), (x) => money(x, "USD")),
+    stat("Avg price EUR", list.map((l) => l.eur), (x) => money(x, "EUR")),
+    stat("Avg USD / m²", list.map((l) => ppm(l, "USD")), (x) => "$" + fmtNum(x, 0)),
+    stat("Avg EUR / m²", list.map((l) => ppm(l, "EUR")), (x) => "€" + fmtNum(x, 0)),
+    lms.map((lm) => stat("to " + lm.name, list.map((l) => (l.geo && l.geo.lm ? l.geo.lm[lm.key] : null)), m)));
 }
 
 /* ------------------------------------------------------------- detail */
