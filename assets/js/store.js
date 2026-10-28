@@ -12,6 +12,7 @@ export const store = {
   withRemoved: false,
   cities: [],
   status: null,
+  marked: new Set(),     // ads marked as of interest, as "source:id"
 
   reset() {
     this.user = null; this.prefs = {}; this.listings = null; this.cities = []; this.status = null; this.withRemoved = false;
@@ -22,6 +23,7 @@ export const store = {
     this.listings = r.listings;
     this.cities = r.cities;
     this.status = r.status;
+    this.marked = new Set(r.marked || []);
     this.withRemoved = withRemoved;
     return this;
   },

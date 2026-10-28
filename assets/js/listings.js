@@ -7,7 +7,7 @@
 // opens everything stored about the listing with a large map; a click on the
 // link opens the listing itself on OLX, in a window of its own.
 
-import { el, put, icon, memory, debounce } from "./util.js";
+import { el, put, icon, memory, debounce, toast } from "./util.js";
 import { store } from "./store.js";
 import { api } from "./api.js";
 import { openModal } from "./dialog.js";
@@ -27,7 +27,44 @@ const QUALITY = {
 
 const DEFAULT_FILTERS = { city: "", district: "", street: "", lm: {}, floorMin: "", floorMax: "", floorsMin: "", floorsMax: "",
   areaMin: "", areaMax: "", priceMin: "", priceMax: "", priceCur: "USD", ppmMin: "", ppmMax: "", ppmCur: "USD", removed: false,
-  changed: false, separate: false };
+  changed: false, separate: false, marked: false };
+
+/** Filters as they start: Kyiv and its Shevchenkivskyi district. */
+function defaultFilters() {
+  const kyiv = store.cities.find((c) => c.name_en === "Kyiv") || store.cities[0];
+  return { ...DEFAULT_FILTERS, city: kyiv ? String(kyiv.id) : "", district: "Shevchenkivskyi", v: 2 };
+}
+
+/** A flat is marked when any of its ads is. */
+function isMarked(f) {
+  return (f._ads || [f]).some((a) => store.marked.has(a.src + ":" + a.sid));
+}
+
+/** Marks or unmarks a flat (all its ads) on the server. */
+async function toggleMark(f) {
+  const on = !isMarked(f);
+  const r = await api("marks", { method: "POST", body: { ads: (f._ads || [f]).map((a) => a.src + ":" + a.sid), on } });
+  store.marked = new Set(r.marked);
+  return on;
+}
+
+function markButton(f, onChange) {
+  const b = el("button", { type: "button", class: "mark-btn" + (isMarked(f) ? " on" : ""), "aria-pressed": isMarked(f) ? "true" : "false",
+    title: isMarked(f) ? "Marked as of interest — click to unmark" : "Mark as of interest" }, isMarked(f) ? "★" : "☆");
+  b.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    b.disabled = true;
+    try {
+      const on = await toggleMark(f);
+      b.textContent = on ? "★" : "☆";
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.title = on ? "Marked as of interest — click to unmark" : "Mark as of interest";
+      if (onChange) onChange(on);
+    } catch (e) { toast(e.message, true); } finally { b.disabled = false; }
+  });
+  return b;
+}
 
 /**
  * One row per flat: the ads the server grouped as the same flat (same building,
@@ -64,6 +101,7 @@ let filters = { ...DEFAULT_FILTERS, ...memory.get("filters", {}) };
 let sort = memory.get("sort", { key: "posted", dir: -1 });
 let page = 0;
 let unsubscribe = null;
+let redraw = () => {};
 /** The listing last opened: its row stays marked, so you see where you were. */
 let selectedId = memory.get("selected", null);
 
@@ -78,6 +116,8 @@ function landmarkColumns() {
 
 function columns() {
   const cols = [
+    { key: "mark", label: "★", title: "Marked as of interest", get: (l) => (isMarked(l) ? 0 : 1), cls: "c-mark-cell",
+      cell: (l) => markButton(l, () => { if (filters.marked) redraw(); }) },
     { key: "city", label: "City", get: (l) => l.city, cell: (l) => l.city || "—" },
     { key: "district", label: "District", get: (l) => l.district, cell: (l) => l.district || "—" },
     { key: "address", label: "Address", get: (l) => l.address || null, cls: "addr",
@@ -152,6 +192,7 @@ function num(v) {
 function matches(l) {
   if (!filters.removed && !l.active) return false;
   if (filters.changed && !l._flag) return false;
+  if (filters.marked && !isMarked(l)) return false;
   if (filters.city && String(l.city_id) !== String(filters.city)) return false;
   if (filters.district && l.district !== filters.district) return false;
   if (filters.street) {
@@ -199,8 +240,14 @@ export async function renderListings(view) {
     put(view, el("div", { class: "loading", text: "Loading listings…" }));
     await store.load(filters.removed);
   }
+  // Kyiv · Shevchenkivskyi as the starting point (once, for filters saved before 0.3.1).
+  if (filters.v !== 2) {
+    const d = defaultFilters();
+    filters = { ...filters, city: d.city, district: d.district, v: 2 };
+    save();
+  }
   if (unsubscribe) unsubscribe();
-  unsubscribe = onRefreshed(async () => { await store.load(); if (document.body.contains(view) && location.hash.startsWith("#/listings")) draw(); });
+  unsubscribe = onRefreshed(async () => { await store.load(); if (document.body.contains(view) && location.hash.startsWith("#/listings")) { drawFilters(); draw(); } });
 
   const ann = el("div", { class: "ann-host" });
   const panel = el("div", { class: "panel filters" });
@@ -215,11 +262,12 @@ export async function renderListings(view) {
   renderAnnunciator(ann);
   drawFilters();
   draw();
+  redraw = draw;
 
   function drawFilters() {
     const cityOpts = [el("option", { value: "" }, "All cities")].concat(store.cities.map((c) => el("option", { value: String(c.id), selected: String(c.id) === String(filters.city) }, c.name_en)));
     const pool = store.listings.filter((l) => !filters.city || String(l.city_id) === String(filters.city));
-    const districts = [...new Set(pool.map((l) => l.district).filter(Boolean))].sort();
+    const districts = [...new Set(pool.map((l) => l.district).concat(filters.district ? [filters.district] : []).filter(Boolean))].sort();
     const distOpts = [el("option", { value: "" }, "All districts")].concat(districts.map((d) => el("option", { value: d, selected: d === filters.district }, d)));
 
     const inp = (key, attrs) => {
@@ -238,6 +286,8 @@ export async function renderListings(view) {
       c.addEventListener("change", () => { filters[key] = c.value; page = 0; save(); draw(); });
       return c;
     };
+    const markedOnly = el("input", { type: "checkbox", checked: !!filters.marked });
+    markedOnly.addEventListener("change", () => { filters.marked = markedOnly.checked; page = 0; save(); draw(); });
     const changed = el("input", { type: "checkbox", checked: !!filters.changed });
     changed.addEventListener("change", () => { filters.changed = changed.checked; page = 0; save(); draw(); });
     const separate = el("input", { type: "checkbox", checked: !!filters.separate });
@@ -277,11 +327,13 @@ export async function renderListings(view) {
         group("Price", "", range("priceMin", "priceMax"), el("label", { class: "cur" }, el("span", { text: "Currency" }), curSel("priceCur", "Currency of the price limits"))),
         group("Price per m²", "", range("ppmMin", "ppmMax"), el("label", { class: "cur" }, el("span", { text: "Currency" }), curSel("ppmCur", "Currency of the price per m² limits")))),
       el("div", { class: "row-actions" },
+        el("label", { class: "check" }, markedOnly, el("span", { text: "Only marked ★" })),
         el("label", { class: "check" }, changed, el("span", { text: "Only new and updated (last refresh)" })),
         el("label", { class: "check" }, separate, el("span", { text: "Show each ad separately" })),
         el("label", { class: "check" }, removed, el("span", { text: "Include listings no longer on OLX" })),
         el("span", { class: "spacer" }),
-        el("button", { type: "button", class: "btn small", onclick: () => { filters = { ...DEFAULT_FILTERS }; page = 0; save(); drawFilters(); draw(); } }, icon("reset"), "Clear filters")));
+        el("button", { type: "button", class: "btn small", title: "Back to Kyiv · Shevchenkivskyi, nothing else set",
+          onclick: () => { filters = defaultFilters(); page = 0; save(); drawFilters(); draw(); } }, icon("reset"), "Clear filters")));
   }
 
   function draw() {
@@ -314,9 +366,8 @@ export async function renderListings(view) {
       el("button", { type: "button", class: "btn small", disabled: page >= pages - 1, onclick: () => { page++; draw(); if (scroll) results.scrollIntoView(); } }, "Next ›"));
 
     put(results,
+      dashboard(list, everything),
       el("div", { class: "toolbar" },
-        el("span", { class: "count" }, el("b", { text: fmtNum(list.length) }), " of " + plural(everything.length, filters.separate ? "ad" : "flat")
-          + (filters.separate ? "" : " (" + fmtNum(everything.reduce((n, f) => n + f._ads.length, 0)) + " ads)")),
         distLimited ? el("span", { class: "faint", text: "Listings without a location are left out while a distance limit is set." }) : null,
         el("span", { class: "grow" }), pages > 1 ? pager(false) : null),
       el("div", { class: "table-wrap listings-wrap" }, el("table", { class: "grid listings" }, el("thead", {}, head), el("tbody", {}, body))),
@@ -333,6 +384,36 @@ function select(id, row) {
   if (row) row.classList.add("selected");
 }
 
+/* ---------------------------------------------------------- dashboard */
+
+/** Ranges of what the filters let through: one tile each, as in PilotLog. */
+function dashboard(list, everything) {
+  const range = (vals) => {
+    const v = vals.filter((x) => x !== null && x !== undefined && Number.isFinite(x));
+    return v.length ? [Math.min(...v), Math.max(...v)] : null;
+  };
+  const money = (x, cur) => {
+    const sym = cur === "EUR" ? "€" : "$";
+    if (x >= 1e6) return sym + (Math.round(x / 1e4) / 100).toLocaleString("en-GB") + "m";
+    if (x >= 1e4) return sym + (Math.round(x / 100) / 10).toLocaleString("en-GB") + "k";
+    return sym + fmtNum(x, 0);
+  };
+  const show = (r, f) => (r ? (r[0] === r[1] ? f(r[0]) : f(r[0]) + " – " + f(r[1])) : "—");
+  const tile = (value, label, cls) => el("div", { class: "dtile" + (cls ? " " + cls : "") }, el("b", { text: value }), el("span", { text: label }));
+  const ads = list.reduce((n, f) => n + (f._ads ? f._ads.length : 1), 0);
+  const allAds = everything.reduce((n, f) => n + (f._ads ? f._ads.length : 1), 0);
+  const city = filters.city ? store.city(Number(filters.city)) : null;
+  const lms = (city ? city.landmarks : landmarkColumns()).slice(0, 2);
+  return el("div", { class: "dash" },
+    tile(fmtNum(list.length) + " / " + fmtNum(everything.length), (filters.separate ? "ads" : "flats") + " shown" + (filters.separate ? "" : " · " + fmtNum(ads) + " of " + fmtNum(allAds) + " ads"), "lead"),
+    tile(show(range(list.map((l) => l.area)), (x) => fmtNum(x, 0)), "m²"),
+    tile(show(range(list.map((l) => l.usd)), (x) => money(x, "USD")), "price USD"),
+    tile(show(range(list.map((l) => l.eur)), (x) => money(x, "EUR")), "price EUR"),
+    tile(show(range(list.map((l) => ppm(l, "USD"))), (x) => "$" + fmtNum(x, 0)), "USD / m²"),
+    tile(show(range(list.map((l) => ppm(l, "EUR"))), (x) => "€" + fmtNum(x, 0)), "EUR / m²"),
+    lms.map((lm) => tile(show(range(list.map((l) => (l.geo && l.geo.lm ? l.geo.lm[lm.key] : null))), (x) => fmtNum(x, 0)) + " m", "to " + lm.name)));
+}
+
 /* ------------------------------------------------------------- detail */
 
 function detail(l) {
@@ -342,7 +423,7 @@ function detail(l) {
     el("div", { class: "title-en", text: l.title_en || l.title }),
     l.title_en ? el("div", { class: "title-orig", text: l.title }) : null);
   const m = openModal({ title: l.address || "Address unknown", eyebrow: [l.city, l.district].filter(Boolean).join(" · "), size: "wide",
-    subtitle: sub, draggable: true });
+    subtitle: sub, draggable: true, extra: markButton(l, () => redraw()) });
   const row = (k, v) => el("tr", {}, el("th", { text: k }), el("td", {}, v));
   // Distances under the map: the landmarks in one row, the two stations in the next.
   const tile = (label, value, sub, dot) => el("div", { class: "dist" },

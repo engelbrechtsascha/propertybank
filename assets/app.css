@@ -731,6 +731,23 @@ table.grid td .sub.was{color:var(--faint);text-decoration:line-through;font-weig
 table.grid.ads-table td.ad-title{white-space:normal;max-width:420px}
 table.grid.ads-table tr.this-ad td{background:color-mix(in oklab, var(--accent) 8%, var(--surface))}
 
+/* Dashboard under the filters (the PilotLog's tiles). */
+.dash{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+@media (min-width:1720px){.dash{grid-template-columns:repeat(8,minmax(0,1fr))}}
+@media (max-width:640px){.dash{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.dtile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-1);min-width:0}
+.dtile b{display:block;font-size:clamp(15px,1.25vw,19px);font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.25}
+.dtile span{display:block;font-size:12.5px;color:var(--muted);margin-top:4px}
+.dtile.lead b{color:var(--accent-text)}
+
+/* Marked as of interest. */
+.mark-btn{all:unset;cursor:pointer;font-size:19px;line-height:1;color:var(--line-strong);padding:2px 4px;border-radius:6px}
+.mark-btn:hover{color:#D4A017}
+.mark-btn.on{color:#E0A800}
+.mark-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.modal-head .mark-btn{font-size:24px}
+table.grid.listings td.c-mark{width:28px;padding-right:0}
+
 /* The description in the detail dialog. */
 .descr{grid-column:1 / -1;border-top:1px solid var(--line);padding-top:14px}
 .descr h3{font-size:14px;margin:0 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}

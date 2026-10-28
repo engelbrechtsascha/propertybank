@@ -12,7 +12,7 @@ declare(strict_types=1);
  */
 
 /** Every table the application owns. No name may be a whole-word prefix of another. */
-const PB_TABLES = ['users', 'listings', 'geocode_cache', 'cities', 'searches', 'refresh_runs', 'fx_rates', 'audit_log', 'settings', 'login_attempts', 'api_tokens'];
+const PB_TABLES = ['users', 'listings', 'geocode_cache', 'cities', 'searches', 'refresh_runs', 'fx_rates', 'audit_log', 'settings', 'login_attempts', 'api_tokens', 'marks'];
 
 const PB_IDENTIFIER_PREFIXES = ['fk_', 'ix_', 'uq_'];
 

@@ -233,10 +233,11 @@ switch ($resource) {
             json_out(listing_description($id));
         }
         if ($method === 'GET') {
-            require_login();
+            $me = require_login();
             @ini_set('memory_limit', '256M');
             json_out([
                 'listings' => listings_for_browser(($_GET['all'] ?? '') === '1'),
+                'marked' => marks_of((int) $me['id']),
                 'cities' => cities_all(),
                 'status' => status_payload(),
             ]);
@@ -382,6 +383,20 @@ switch ($resource) {
             q('UPDATE listings SET search_id = NULL WHERE search_id = ?', [$id]);
             audit($admin, 'search', $id, 'delete', 'Search removed (its listings are kept)');
             json_out(['ok' => true]);
+        }
+        break;
+
+    // ------------------------------------------------------------ marks ---
+    // Flats of interest: POST {ads: ["olx:935797158", …], on: true|false}.
+    case 'marks':
+        if ($method === 'POST') {
+            $u = require_login();
+            $ads = request_body()['ads'] ?? null;
+            if (!is_array($ads) || !$ads || count($ads) > 50) {
+                fail('validation', 'Say which ads to mark.', 422);
+            }
+            marks_set((int) $u['id'], $ads, !empty(request_body()['on']));
+            json_out(['marked' => marks_of((int) $u['id'])]);
         }
         break;
 

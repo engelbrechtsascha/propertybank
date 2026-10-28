@@ -153,3 +153,11 @@ CREATE INDEX IF NOT EXISTS ix_runs_status ON refresh_runs (status);
 CREATE INDEX IF NOT EXISTS ix_audit_created ON audit_log (created_at);
 CREATE INDEX IF NOT EXISTS ix_attempts_email ON login_attempts (email, created_at);
 CREATE INDEX IF NOT EXISTS ix_attempts_ip ON login_attempts (ip, created_at);
+
+CREATE TABLE IF NOT EXISTS marks (
+  user_id    INTEGER NOT NULL,
+  source     TEXT NOT NULL,
+  source_id  TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, source, source_id)
+);

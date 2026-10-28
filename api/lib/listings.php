@@ -421,6 +421,59 @@ function listings_dedupe(): array
     return [$multi, $members];
 }
 
+/* ------------------------------------------------- listings of interest ---
+ *
+ * A person marks the flats they are interested in. A mark is kept per account
+ * and per ad (by the site's own ad number, not the row), so it survives a
+ * flat's ads being regrouped; a flat counts as marked when any of its ads is.
+ * The table is created the first time it is needed, so updating needs no
+ * database step.
+ */
+
+function ensure_marks_table(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    if ((string) cfg('driver', 'mysql') === 'sqlite') {
+        db()->exec(sql('CREATE TABLE IF NOT EXISTS marks (user_id INTEGER NOT NULL, source TEXT NOT NULL, source_id TEXT NOT NULL,
+            created_at TEXT NOT NULL, PRIMARY KEY (user_id, source, source_id))'));
+        return;
+    }
+    db()->exec(sql('CREATE TABLE IF NOT EXISTS marks (
+        user_id    INT UNSIGNED NOT NULL,
+        source     VARCHAR(16)  NOT NULL,
+        source_id  VARCHAR(40)  NOT NULL,
+        created_at DATETIME     NOT NULL,
+        PRIMARY KEY (user_id, source, source_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'));
+}
+
+/** The ads a person marked, as "source:id". @return list<string> */
+function marks_of(int $userId): array
+{
+    ensure_marks_table();
+    return array_map(static fn ($r) => $r['source'] . ':' . $r['source_id'],
+        all('SELECT source, source_id FROM marks WHERE user_id = ?', [$userId]));
+}
+
+/** Marks or unmarks a flat: all of its ads, given as "source:id". */
+function marks_set(int $userId, array $keys, bool $on): void
+{
+    ensure_marks_table();
+    foreach ($keys as $k) {
+        if (!preg_match('/^([a-z]{2,16}):([A-Za-z0-9_\-]{1,40})$/', (string) $k, $m)) {
+            continue;
+        }
+        q('DELETE FROM marks WHERE user_id = ? AND source = ? AND source_id = ?', [$userId, $m[1], $m[2]]);
+        if ($on) {
+            q('INSERT INTO marks (user_id, source, source_id, created_at) VALUES (?, ?, ?, ?)', [$userId, $m[1], $m[2], now_sql()]);
+        }
+    }
+}
+
 /** Every listing as the browser shows it. */
 function listings_for_browser(bool $withInactive): array
 {

@@ -79,6 +79,24 @@ about **half an hour to an hour**, because the geocoder allows one lookup a
 second. Keep the page open; if you close it, the refresh pauses and the page
 offers to continue. Later refreshes only locate new or changed listings.
 
+### Updating to 0.3.1
+
+**Dashboard.** Under the filters, tiles show what the filters let through:
+flats shown out of all (with the ads behind them), and the range (min – max)
+of floorspace, price in USD and EUR, price per m² in USD and EUR, and the
+distance to each landmark of the city.
+
+**Marked.** The ☆ in the first column (and in a flat's dialog) marks a flat as
+of interest; *Only marked ★* shows just those. Marks belong to the person
+signed in and stay across refreshes; they are kept per ad, so a flat stays
+marked when another ad of it is shown.
+
+**Defaults.** The filters start at Kyiv · Shevchenkivskyi (once, for filters
+saved earlier too); *Clear filters* returns there.
+
+The database gains the `marks` table by itself. Upload
+`propertybank-0.3.1-update.zip` as below.
+
 ### Updating to 0.3.0
 
 **One row per flat.** The same flat is often advertised several times on OLX,

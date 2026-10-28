@@ -185,3 +185,13 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   KEY ix_attempts_email (email, created_at),
   KEY ix_attempts_ip (ip, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Flats a person marked as of interest, per ad (the site's ad number), so a
+-- mark survives regrouping. Also created on first use by listings.php.
+CREATE TABLE IF NOT EXISTS marks (
+  user_id    INT UNSIGNED NOT NULL,
+  source     VARCHAR(16)  NOT NULL,
+  source_id  VARCHAR(40)  NOT NULL,
+  created_at DATETIME     NOT NULL,
+  PRIMARY KEY (user_id, source, source_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
